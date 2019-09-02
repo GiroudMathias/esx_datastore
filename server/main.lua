@@ -1,28 +1,32 @@
 local DataStores, DataStoresIndex, SharedDataStores = {}, {}, {}
-ESX = nil
 
+ESX = nil
 TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
 
 MySQL.ready(function()
-	local result = MySQL.Sync.fetchAll('SELECT * FROM datastore')
+	loadDataStore()
+end)
 
-	for i=1, #result, 1 do
-		local name   = result[i].name
-		local label  = result[i].label
-		local shared = result[i].shared
+function loadDataStore()
+	local datastores = MySQL.Sync.fetchAll('SELECT * FROM datastore')
 
-		local result2 = MySQL.Sync.fetchAll('SELECT * FROM datastore_data WHERE name = @name', {
+	for i=1, #datastores, 1 do
+		local name   = datastores[i].name
+		local label  = datastores[i].label
+		local shared = datastores[i].shared
+
+		local datastoreData = MySQL.Sync.fetchAll('SELECT * FROM datastore_data WHERE name = @name', {
 			['@name'] = name
 		})
-
+		print(name)
 		if shared == 0 then
 			table.insert(DataStoresIndex, name)
 			DataStores[name] = {}
 
-			for j=1, #result2, 1 do
-				local storeName  = result2[j].name
-				local storeOwner = result2[j].owner
-				local storeData  = (result2[j].data == nil and {} or json.decode(result2[j].data))
+			for j=1, #datastoreData, 1 do
+				local storeName  = datastoreData[j].name
+				local storeOwner = datastoreData[j].owner
+				local storeData  = (datastoreData[j].data == nil and {} or json.decode(datastoreData[j].data))
 				local dataStore  = CreateDataStore(storeName, storeOwner, storeData)
 
 				table.insert(DataStores[name], dataStore)
@@ -30,21 +34,43 @@ MySQL.ready(function()
 		else
 			local data = nil
 
-			if #result2 == 0 then
+			if #datastoreData == 0 then
 				MySQL.Sync.execute('INSERT INTO datastore_data (name, owner, data) VALUES (@name, NULL, \'{}\')', {
 					['@name'] = name
 				})
 
 				data = {}
 			else
-				data = json.decode(result2[1].data)
+				data = json.decode(datastoreData[1].data)
 			end
 
 			local dataStore = CreateDataStore(name, nil, data)
 			SharedDataStores[name] = dataStore
 		end
 	end
-end)
+end
+
+function RegisterSharedDataStore(name, label)
+	MySQL.ready(function()
+		local result = MySQL.Sync.fetchAll('SELECT * FROM datastore WHERE name = @name', {
+			['@name'] = name
+		})
+		if result[1] then
+			print(('esx_datastore: Datastore %s <%s> (owner: %s) registred'):format(label, name, owner))
+		else
+			MySQL.Sync.execute('INSERT INTO datastore (name, label, shared) VALUES (@name, @label, 1)', {
+				['@name'] = name,
+				['@label'] = label
+			})
+			MySQL.Sync.execute('INSERT INTO datastore_data (name, owner, data) VALUES (@name, NULL, \'{}\')', {
+				['@name'] = name
+			})
+			local dataStore = CreateDataStore(name, nil, {})
+			SharedDataStores[name] = dataStore
+			print(('esx_datastore: Datastore %s <%s> (owner: %s) created on the database'):format(label, name, owner))
+		end
+	end)
+end
 
 function GetDataStore(name, owner)
 	for i=1, #DataStores[name], 1 do
@@ -67,6 +93,10 @@ end
 function GetSharedDataStore(name)
 	return SharedDataStores[name]
 end
+
+AddEventHandler('esx_datastore:registerSharedDataStore', function(name, owner)
+	RegisterSharedDataStore(name, owner)
+end)
 
 AddEventHandler('esx_datastore:getDataStore', function(name, owner, cb)
 	cb(GetDataStore(name, owner))
