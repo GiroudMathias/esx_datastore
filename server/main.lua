@@ -18,7 +18,6 @@ function loadDataStore()
 		local datastoreData = MySQL.Sync.fetchAll('SELECT * FROM datastore_data WHERE name = @name', {
 			['@name'] = name
 		})
-		print(name)
 		if shared == 0 then
 			table.insert(DataStoresIndex, name)
 			DataStores[name] = {}
